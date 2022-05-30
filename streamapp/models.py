@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+import os
 
 # Create your models here.
 
@@ -33,13 +34,20 @@ class SharePost(models.Model):
     update_at = models.DateTimeField(auto_now=True)
 
 class Post(models.Model):
+    def get_upload_path(instance, filename):
+        return "Gopipatwa/05062022/"
+        # print(instance.update_date.strftime("%B-%d-%Y")str(f"{instance.userid}/{instance.upload_date.strftime('%B-%d-%Y')}/"))
+    
     userid = models.ForeignKey(Users,to_field="username",on_delete=models.CASCADE)
     upload_date = models.DateTimeField(auto_now_add=True)
     update_date = models.DateTimeField(auto_now=True)
-    print("_+++++++++++++++++++++++++++++++++++++++++++++++++++++",upload_date,[i for i in update_date])
+    # print("_+++++++++++++++++++++++++++++++++++++++++++++++++++++",upload_date,[i for i in update_date])
     desc = models.TextField(blank=True,null=True)
     tags = models.TextField(blank=True,null=True)
-    img_post = models.ImageField(upload_to = f"{upload_date}")
+    img_post = models.ImageField(upload_to = get_upload_path)
     like_post = models.ManyToManyField(LikePost,blank=True,null=True)
     comment_post = models.ManyToManyField(CommentPost,blank=True,null=True)
     share_post = models.ManyToManyField(SharePost,blank=True,null=True)
+
+
+    
