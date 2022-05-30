@@ -1,0 +1,316 @@
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from api.models import Bank, BankAccount, Product,Users,AccessUser,AccessModels,UserRole,UserConfig,GetUserDetails,Settlement
+
+# Register your models here.
+
+# admin.site.register(Users)
+# admin.site.register(Product)
+
+
+admin.site.register(AccessUser)
+admin.site.register(AccessModels)
+admin.site.register(UserRole)
+
+@admin.register(Product)
+class ProductAdmin(admin.ModelAdmin):
+    list_display = ['name','price','add_date','quantity','image']
+
+@admin.register(Users)
+class UserAdmin(UserAdmin):
+    list_display = ['username','email','password','user_role']
+
+@admin.register(UserConfig)
+class UserConfigAdmin(admin.ModelAdmin):
+    list_display = ['group_name','userid','exchange','instrument_type','buy_brokrate','sell_brokrate','broke_type','usd_rate','usd_inr_cost','profit_ratio','sharing_rate']
+
+
+@admin.register(GetUserDetails)
+class GetUserDetailsAdmin(admin.ModelAdmin):
+    list_display = ['username','user_ip_adds','is_pc','is_bot','os_type','os_version','browser_name']
+
+
+@admin.register(Bank)
+class BankAdmin(admin.ModelAdmin):
+    list_display = ['id','name']
+
+@admin.register(BankAccount)
+class BankAccount(admin.ModelAdmin):
+    list_display = ['userid','bank_name','account_ifc_code','account_holder_name','gender']
+
+    list_filter = ['userid']
+
+@admin.register(Settlement)
+class SettlementAdmin(admin.ModelAdmin):
+    list_display = ['datetime','symbol','exchange','script_code','instrument_name','option_type','expiry_date','strike_price','settlement_price']
+    # list_display = ('get_products', 'vendor')
+
+    # def get_products(self, obj):
+    #     return "\n".join([p.products for p in obj.product.all()])
+
+
+
+
+
+
+
+
+views.py
+
+
+
+# from django.shortcuts import render
+from email.policy import HTTP
+from urllib import request
+from api.serializers import UserSerializers,UserLoginSerializers,ProductSerializers,AccessModelSerializers,AccessUserSerializers
+from api.models import AccessModels, Users,Product
+from django.contrib.auth import authenticate
+from django.http import Http404
+from rest_framework.response import Response
+from rest_framework.decorators import api_view,permission_classes
+# # Create your views here.
+from rest_framework.views import APIView
+from rest_framework import status
+import json
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.parsers import FileUploadParser
+from rest_framework import generics
+import pandas as pd
+from django.db.models import Count,Sum
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.schemas import SchemaGenerator
+from rest_framework.views import APIView
+from rest_framework_swagger import renderers
+
+
+
+class SwaggerSchemaView(APIView):
+    permission_classes = [AllowAny]
+    renderer_classes = [
+        renderers.OpenAPIRenderer,
+        renderers.SwaggerUIRenderer
+    ]
+
+    def get(self, request):
+        generator = SchemaGenerator()
+        schema = generator.get_schema(request=request)
+
+        return Response(schema)
+
+class ApiView(generics.ListAPIView):
+    permission_classes = (AllowAny,)
+    # serializer_class = UserLoginSerializers
+    # queryset = Users.objects.all()
+    def get(self,request):
+        api_urls = {
+        'List':'/product/',
+        'Detail View':'/product/<int:pk>/',
+        'Login':'/login/',
+        'Register':'/register/',
+        'dashboard':'/dashboard/'}
+        return Response(api_urls)
+
+class LoginView(APIView):
+    permission_classes = (AllowAny,)
+    queryset = Users.objects.all()
+    def post(self,request):
+        print(request.data)
+        username=request.data['username']
+        psd=request.data['password']
+        # print(username,psd)
+        auth = authenticate(username=username,password=psd)
+        if auth:
+            # user = Users.objects.get(id=username)
+            try:
+                token = Token.objects.create(user=auth)
+            except:
+                # token = Token.objects.get(user_id=username)
+                token = Token.objects.get(user_id=Users.objects.get(username=username).id)
+                  
+            return Response({'message':"success","username":username,"password":psd,"token":str(token)},status=status.HTTP_200_OK)
+        else:
+            return Response({"message":"invalid authenticate"})
+
+class RegisterView(APIView):
+    permission_classes = (AllowAny,)
+    queryset = Users.objects.all()
+    def post(self,request):
+        serializer = UserSerializers(data=request.data)
+        if serializer.is_valid(raise_exception=True):
+            user = serializer.save()
+            if user:
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# class ProductView(generics.ListCreateAPIView):
+#     queryset = Product.objects.all()
+#     serializer_class = ProductSerializers
+
+class ProductView(APIView):
+    # user = Token.objects.get(key='token string').user
+    permission_classes = (AllowAny,)
+    queryset = Product.objects.all()
+    def get(self, request, format=None):
+        product = Product.objects.all()
+        serializer = ProductSerializers(product, many=True)
+        return Response(serializer.data)
+
+    def post(self,request):
+        serializer = ProductSerializers(data = request.data)
+        if serializer.is_valid(raise_exception = True):
+            serializer.save()
+            return Response({"message":"success"},status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+
+
+class ProductDetail(APIView):
+    # permission_classes = (AllowAny,)
+    permission_classes = (IsAuthenticated,)
+    queryset = Product.objects.all()
+    def get_object(self, pk):
+        try:
+            return Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            raise Http404
+
+    def get(self, request, pk, format=None):
+        product = self.get_object(pk)
+        serializer = ProductSerializers(product)
+        return Response(serializer.data)
+
+    def put(self, request, pk, format=None):
+        product = self.get_object(pk)
+        serializer = ProductSerializers(product, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk, format=None):
+        product = self.get_object(pk)
+        product.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GetAllModelsView(APIView):
+    permission_classes = (IsAuthenticated,)
+    queryset = Users.objects.all()
+    def get(self, request, format=None):
+        # print(dir(request.authenticators))
+        # print((request.user))
+        data = Users.objects.get(username = request.user).access_models.all()
+        # print([i.name for i in Users.objects.get(username = request.user).access_models.all()])
+        serializer = AccessModelSerializers(data, many=True)
+        return Response({"data":serializer.data},status=status.HTTP_200_OK)
+        # return Response({"accessrole":str(Users.objects.get(username="username").access_models)})
+
+
+class GetSpecificModelView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self,request,pk,format=None):
+        # print(pk)
+        # print(request.user)
+        check = AccessUserSerializers(instance=Users.objects.get(username = request.user).access_user.all().values("name"),many=True)
+        # print(Users.objects.get(username=request.user).access_models.get(name=pk))
+        
+        try:
+            Users.objects.get(username=request.user).access_models.get(name=pk)
+            return Response({"info":check.data})
+        except:
+            return Response({"info":"invalid Urls"})
+
+class LogoutView(APIView):
+    permission_classes = (IsAuthenticated,)
+    def get(self,request,format=None):
+        dt=Token.objects.filter(user_id=request.user).delete()
+        print(dt)
+        return Response({"message":"Logout Successfully"})
+
+class DashboardView(APIView):
+    permission_classes = (IsAuthenticated,)
+    def get(self,request,format=None):
+        userdata = Users.objects.get(username = request.user )
+        serializer = UserSerializers(userdata, many=False)
+        return Response(
+            {
+                "message":serializer.data
+            },status=status.HTTP_200_OK
+        )
+
+
+class SettlementFileView(APIView):
+    permission_classes = (IsAuthenticated,)
+    # parser_classes = []
+    parser_classes = [FileUploadParser]
+
+    def post(self,request,format=None):
+        print(request.data)
+        df = pd.read_excel(request.FILES['file'],engine='openpyxl')
+        print(df.head())
+        response = Response()
+        response.content_type='application/vnd.ms-excel'
+        # response['Cache-Control'] = 'no-cache'
+        response['Content-Disposition'] = 'attachment; filename="response.xlsx"'
+        # df.to_excel(response.data,index=False)
+        return Response({"message":"uploaded successfully!"})
+    
+    def get(self,request,format=None):
+        return Response({"message":"This url for settlement file input u must have give input file name attrs is 'file'"})
+
+
+
+# print(Users.objects.values("access_models").filter(username="gopi").annotate(count = Count("id")))
+
+# print(Product.objects.values("name","quantity","price").filter(price__lt=100).annotate(total_price = Sum('quantity')*Sum("price")))
+# print(ProductSerializers(instance=Product.objects.filter(price__lt=100),many=True).data)
+
+# select name = values from Table=Models where = filter groupby = aggregrate+annotate order by = orderby()
+
+
+
+serializer.py
+
+from rest_framework import serializers
+from api.models import Product,Users,AccessModels,AccessUser
+
+
+class UserSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Users
+        fields = ['first_name','last_name','username','email','password','contact']
+
+    def create(self,validated_data):
+        print(validated_data,"_______________")
+        password = validated_data.pop("password",None)
+        instance = self.Meta.model(**validated_data)
+        if password is not None:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
+class UserLoginSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Users
+        fields = ['username','password']
+
+class ProductSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = '__all__'
+
+
+class AccessModelSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = AccessModels
+        fields = ['id','name']
+
+
+class AccessUserSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = AccessUser
+        fields = "__all__"
